@@ -138,7 +138,7 @@
 
   <script>
     // Link /exec da implantação do Apps Script.
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxh_TXZAzn5KlGLjLMzCKCeNGHTn_mjjcNAWqRurbUhBhUHIY0VfDd2BAjMRvSw7d0M0g/exec";
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzPmPMj9FC4K157u4cF2mWj-QZhzLVlNBaa62vFhg_xX0ndVdxxkB-NH9d8tRpcHJG7/exec";
 
     const TEMPO_SILENCIO_AUTO_ENVIO = 2000; // 2 segundos sem fala: envia sozinho.
     const TEMPO_MAXIMO_SEM_CONVERSA = 60000; // 1 minuto sem conversa: fecha a janela.
@@ -411,6 +411,30 @@
       });
     }
 
+    function avisarViaConnect(pergunta, resposta) {
+      const mensagem = {
+        tipo: "assistente_voz_enviado",
+        id: "voz_" + Date.now() + "_" + Math.floor(Math.random() * 999999),
+        pergunta: pergunta,
+        resposta: resposta
+      };
+
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage(mensagem, "*");
+
+          // Reenvios curtos para garantir que o Via Connect receba antes da janela fechar.
+          setTimeout(function() {
+            try { window.opener.postMessage(mensagem, "*"); } catch (e) {}
+          }, 250);
+
+          setTimeout(function() {
+            try { window.opener.postMessage(mensagem, "*"); } catch (e) {}
+          }, 650);
+        }
+      } catch (e) {}
+    }
+
     async function enviarPergunta() {
       const pergunta = normalizar(textoPergunta.value);
 
@@ -439,19 +463,14 @@
         respostaDiv.innerText = "Enviado com sucesso.";
         statusDiv.innerText = "Enviado. O Via Connect vai falar a resposta.";
 
-        if (window.opener) {
-          window.opener.postMessage({
-            tipo: "assistente_voz_enviado",
-            pergunta: pergunta,
-            resposta: resposta
-          }, "*");
-        }
+        avisarViaConnect(pergunta, resposta);
 
         // Não fala nesta janelinha. Quem fala a resposta é o Via Connect principal.
+        // Espera um pouco antes de fechar para o postMessage chegar sem deixar a assistente muda.
         setTimeout(function() {
           window.close();
           statusDiv.innerText = "Pergunta enviada. Pode fechar esta janela.";
-        }, 500);
+        }, 1400);
 
       } catch (erro) {
         enviando = false;
