@@ -6,9 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -19,46 +17,48 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: 14px;
     }
 
     .app {
       width: 100%;
-      max-width: 480px;
+      max-width: 430px;
       background: #ffffff;
       border: 1px solid #e2e8f0;
       border-radius: 18px;
-      padding: 22px;
+      padding: 18px;
       box-shadow: 0 12px 35px rgba(15, 23, 42, 0.12);
     }
 
     h1 {
-      font-size: 22px;
-      margin: 0 0 6px;
+      font-size: 20px;
+      margin: 0 0 5px;
     }
 
     .sub {
       color: #64748b;
-      font-size: 14px;
-      margin-bottom: 18px;
+      font-size: 13px;
+      margin-bottom: 14px;
+      line-height: 1.35;
     }
 
     .status {
       font-size: 13px;
       color: #64748b;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       min-height: 18px;
     }
 
     textarea {
       width: 100%;
-      min-height: 110px;
+      min-height: 120px;
       resize: vertical;
       border: 1px solid #cbd5e1;
       border-radius: 12px;
       padding: 12px;
       font-size: 15px;
       outline: none;
+      line-height: 1.35;
     }
 
     textarea:focus {
@@ -77,37 +77,32 @@
       border: none;
       border-radius: 12px;
       padding: 13px;
-      font-size: 15px;
+      font-size: 14px;
       cursor: pointer;
       font-weight: bold;
     }
 
-    .mic {
-      background: #dc2626;
-      color: white;
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
 
-    .send {
-      background: #2563eb;
-      color: white;
-    }
-
-    .stop {
-      background: #0f172a;
-      color: white;
-      margin-top: 10px;
-      width: 100%;
-    }
+    .mic { background: #dc2626; color: white; }
+    .send { background: #2563eb; color: white; }
+    .stop { background: #0f172a; color: white; margin-top: 10px; width: 100%; }
+    .clear { background: #e2e8f0; color: #0f172a; margin-top: 10px; width: 100%; }
 
     .resposta {
-      margin-top: 18px;
-      padding: 14px;
+      margin-top: 14px;
+      padding: 13px;
       background: #f1f5f9;
       border-radius: 12px;
-      font-size: 15px;
+      font-size: 14px;
       line-height: 1.45;
       white-space: pre-wrap;
-      min-height: 80px;
+      min-height: 78px;
+      max-height: 180px;
+      overflow-y: auto;
     }
 
     .ouvindo {
@@ -125,7 +120,7 @@
 
   <div class="app">
     <h1>Assistente Via Connect</h1>
-    <div class="sub">Fale sua pergunta e envie para o painel.</div>
+    <div class="sub">Fale ou digite sua pergunta. Depois de enviar, esta janelinha tenta fechar sozinha.</div>
 
     <div id="status" class="status">Pronto para ouvir.</div>
 
@@ -137,13 +132,15 @@
     </div>
 
     <button id="btnParar" class="stop">Parar voz</button>
+    <button id="btnLimpar" class="clear">Limpar texto</button>
 
     <div id="resposta" class="resposta">Resposta da assistente aparecerá aqui.</div>
   </div>
 
   <script>
-    // COLE AQUI O LINK /exec DO SEU APPS SCRIPT
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx4p6PVeV9BbvYicaqlUF4Z1flfPrrrwBaQHjcR2z14e-bTbH8NXqy1Flj7lXBrrcyFPg/exec";
+    // IMPORTANTE: cole aqui o link /exec da implantação do Apps Script.
+    // Exemplo: https://script.google.com/macros/s/SEU_ID/exec
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxh_TXZAzn5KlGLjLMzCKCeNGHTn_mjjcNAWqRurbUhBhUHIY0VfDd2BAjMRvSw7d0M0g/exec";
 
     const textoPergunta = document.getElementById("textoPergunta");
     const respostaDiv = document.getElementById("resposta");
@@ -151,10 +148,20 @@
     const btnFalar = document.getElementById("btnFalar");
     const btnEnviar = document.getElementById("btnEnviar");
     const btnParar = document.getElementById("btnParar");
+    const btnLimpar = document.getElementById("btnLimpar");
 
     let recognition = null;
     let ouvindo = false;
     let vozSelecionada = null;
+    let textoFinal = "";
+
+    function normalizar(texto) {
+      return String(texto || "")
+        .replace(/\*/g, "")
+        .replace(/[#_`]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
 
     function carregarVozFeminina() {
       if (!("speechSynthesis" in window)) return;
@@ -165,11 +172,10 @@
         voices.find(v => v.lang === "pt-BR" && v.name.toLowerCase().includes("maria")) ||
         voices.find(v => v.lang === "pt-BR" && v.name.toLowerCase().includes("francisca")) ||
         voices.find(v => v.lang === "pt-BR" && v.name.toLowerCase().includes("helena")) ||
+        voices.find(v => v.lang === "pt-BR" && v.name.toLowerCase().includes("female")) ||
         voices.find(v => v.lang === "pt-BR") ||
         voices.find(v => v.lang.startsWith("pt")) ||
         voices[0];
-
-      console.log("Voz escolhida:", vozSelecionada ? vozSelecionada.name : "nenhuma");
     }
 
     function falarTexto(texto) {
@@ -177,11 +183,7 @@
 
       window.speechSynthesis.cancel();
 
-      let limpo = texto
-        .replace(/\*/g, "")
-        .replace(/[#_`]/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
+      let limpo = normalizar(texto);
 
       const fala = new SpeechSynthesisUtterance(limpo);
       fala.lang = "pt-BR";
@@ -189,9 +191,7 @@
       fala.pitch = 1.12;
       fala.volume = 0.95;
 
-      if (vozSelecionada) {
-        fala.voice = vozSelecionada;
-      }
+      if (vozSelecionada) fala.voice = vozSelecionada;
 
       window.speechSynthesis.speak(fala);
     }
@@ -209,12 +209,14 @@
         return;
       }
 
+      window.speechSynthesis?.cancel();
+      textoFinal = textoPergunta.value.trim() ? textoPergunta.value.trim() + " " : "";
+
       recognition = new SpeechRecognition();
       recognition.lang = "pt-BR";
       recognition.continuous = true;
       recognition.interimResults = true;
-
-      let textoFinal = "";
+      recognition.maxAlternatives = 1;
 
       recognition.onstart = function() {
         ouvindo = true;
@@ -226,16 +228,16 @@
         let textoTemporario = "";
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          const trecho = event.results[i][0].transcript;
+          const trecho = event.results[i][0].transcript || "";
 
           if (event.results[i].isFinal) {
             textoFinal += trecho + " ";
           } else {
-            textoTemporario += trecho;
+            textoTemporario += trecho + " ";
           }
         }
 
-        textoPergunta.value = (textoFinal + textoTemporario).trim();
+        textoPergunta.value = normalizar(textoFinal + textoTemporario);
       };
 
       recognition.onerror = function(event) {
@@ -255,7 +257,11 @@
         }
       };
 
-      recognition.start();
+      try {
+        recognition.start();
+      } catch (erro) {
+        statusDiv.innerText = "Não consegui iniciar o microfone. Tente novamente.";
+      }
     }
 
     function pararReconhecimento() {
@@ -266,33 +272,45 @@
 
     function chamarIA(pergunta) {
       return new Promise(function(resolve, reject) {
-        const callbackName = "callbackIA_" + Date.now();
+        if (!WEB_APP_URL || WEB_APP_URL.includes("COLE_AQUI")) {
+          reject(new Error("Configure o WEB_APP_URL com o link /exec do Apps Script."));
+          return;
+        }
+
+        const callbackName = "callbackIA_" + Date.now() + "_" + Math.floor(Math.random() * 99999);
+        const script = document.createElement("script");
 
         window[callbackName] = function(data) {
           delete window[callbackName];
-          script.remove();
+
+          if (script && script.parentNode) {
+            script.parentNode.removeChild(script);
+          }
 
           if (data && data.ok) {
             resolve(data.resposta);
           } else {
-            reject(new Error(data?.resposta || "Erro desconhecido."));
+            reject(new Error(data?.resposta || "Erro desconhecido ao chamar IA."));
           }
         };
-
-        const script = document.createElement("script");
 
         const url =
           WEB_APP_URL +
           "?action=ia" +
           "&callback=" + encodeURIComponent(callbackName) +
-          "&pergunta=" + encodeURIComponent(pergunta);
+          "&pergunta=" + encodeURIComponent(pergunta) +
+          "&t=" + Date.now();
 
         script.src = url;
 
         script.onerror = function() {
           delete window[callbackName];
-          script.remove();
-          reject(new Error("Falha ao comunicar com o Apps Script."));
+
+          if (script && script.parentNode) {
+            script.parentNode.removeChild(script);
+          }
+
+          reject(new Error("Falha ao comunicar com o Apps Script. Confira o link /exec e a implantação."));
         };
 
         document.body.appendChild(script);
@@ -300,37 +318,71 @@
     }
 
     async function enviarPergunta() {
-      const pergunta = textoPergunta.value.trim();
+      const pergunta = normalizar(textoPergunta.value);
 
       if (!pergunta) {
         statusDiv.innerText = "Fale ou digite uma pergunta antes de enviar.";
         return;
       }
 
-      statusDiv.innerText = "Enviando para a IA...";
-      respostaDiv.innerText = "Pensando...";
+      pararReconhecimento();
+
+      btnEnviar.disabled = true;
+      btnFalar.disabled = true;
+      btnParar.disabled = true;
+      btnLimpar.disabled = true;
+
+      statusDiv.innerText = "Enviando para o sistema...";
+      respostaDiv.innerText = "Enviando e aguardando resposta...";
 
       try {
-        const resposta = await chamarIA(pergunta);
+        const resposta = normalizar(await chamarIA(pergunta));
 
         respostaDiv.innerText = resposta;
-        statusDiv.innerText = "Resposta recebida.";
+        statusDiv.innerText = "Enviado com sucesso. Fechando a janelinha...";
+
+        if (window.opener) {
+          window.opener.postMessage({
+            tipo: "assistente_voz_enviado",
+            pergunta: pergunta,
+            resposta: resposta
+          }, "*");
+        }
+
         falarTexto(resposta);
+
+        setTimeout(function() {
+          window.close();
+          statusDiv.innerText = "Pergunta enviada. Pode fechar esta janela.";
+        }, 1800);
 
       } catch (erro) {
         respostaDiv.innerText = "Erro: " + erro.message;
-        statusDiv.innerText = "Não consegui comunicar com a IA.";
+        statusDiv.innerText = "Não consegui enviar para o sistema.";
+
+        btnEnviar.disabled = false;
+        btnFalar.disabled = false;
+        btnParar.disabled = false;
+        btnLimpar.disabled = false;
       }
     }
 
-    btnFalar.addEventListener("click", function() {
-      window.speechSynthesis.cancel();
-      iniciarReconhecimento();
+    btnFalar.addEventListener("click", iniciarReconhecimento);
+    btnParar.addEventListener("click", pararReconhecimento);
+    btnEnviar.addEventListener("click", enviarPergunta);
+
+    btnLimpar.addEventListener("click", function() {
+      textoPergunta.value = "";
+      textoFinal = "";
+      respostaDiv.innerText = "Resposta da assistente aparecerá aqui.";
+      statusDiv.innerText = "Pronto para ouvir.";
     });
 
-    btnParar.addEventListener("click", pararReconhecimento);
-
-    btnEnviar.addEventListener("click", enviarPergunta);
+    textoPergunta.addEventListener("keydown", function(event) {
+      if (event.key === "Enter" && event.ctrlKey) {
+        enviarPergunta();
+      }
+    });
   </script>
 
 </body>
