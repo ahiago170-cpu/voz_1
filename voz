@@ -121,7 +121,6 @@
     }
   </style>
 </head>
-
 <body>
 
   <div class="app">
@@ -143,6 +142,7 @@
   </div>
 
   <script>
+    // COLE AQUI O LINK /exec DO SEU APPS SCRIPT
     const WEB_APP_URL = "COLE_AQUI_SEU_LINK_DO_APPS_SCRIPT_EXEC";
 
     const textoPergunta = document.getElementById("textoPergunta");
