@@ -18,6 +18,7 @@
       align-items: center;
       justify-content: center;
       padding: 14px;
+      overflow: hidden;
     }
 
     .app {
@@ -52,7 +53,7 @@
     textarea {
       width: 100%;
       min-height: 120px;
-      resize: vertical;
+      resize: none;
       border: 1px solid #cbd5e1;
       border-radius: 12px;
       padding: 12px;
@@ -105,9 +106,7 @@
       overflow-y: auto;
     }
 
-    .ouvindo {
-      animation: pulse 1.1s infinite;
-    }
+    .ouvindo { animation: pulse 1.1s infinite; }
 
     @keyframes pulse {
       0% { transform: scale(1); opacity: 1; }
@@ -120,27 +119,29 @@
 
   <div class="app">
     <h1>Assistente Via Connect</h1>
-    <div class="sub">Fale ou digite sua pergunta. Depois de enviar, esta janelinha tenta fechar sozinha.</div>
+    <div class="sub">Pode falar assim que a janela abrir. Ao parar por 2 segundos, envio automaticamente.</div>
 
-    <div id="status" class="status">Pronto para ouvir.</div>
+    <div id="status" class="status">Iniciando assistente...</div>
 
     <textarea id="textoPergunta" placeholder="Sua fala vai aparecer aqui..."></textarea>
 
     <div class="botoes">
-      <button id="btnFalar" class="mic">🎙️ Iniciar voz</button>
+      <button id="btnFalar" class="mic">🎙️ Ouvir</button>
       <button id="btnEnviar" class="send">Enviar</button>
     </div>
 
     <button id="btnParar" class="stop">Parar voz</button>
     <button id="btnLimpar" class="clear">Limpar texto</button>
 
-    <div id="resposta" class="resposta">Resposta da assistente aparecerá aqui.</div>
+    <div id="resposta" class="resposta">Aguardando sua fala...</div>
   </div>
 
   <script>
-    // IMPORTANTE: cole aqui o link /exec da implantação do Apps Script.
-    // Exemplo: https://script.google.com/macros/s/SEU_ID/exec
+    // Link /exec da implantação do Apps Script.
     const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxh_TXZAzn5KlGLjLMzCKCeNGHTn_mjjcNAWqRurbUhBhUHIY0VfDd2BAjMRvSw7d0M0g/exec";
+
+    const TEMPO_SILENCIO_AUTO_ENVIO = 2000; // 2 segundos sem fala: envia sozinho.
+    const TEMPO_MAXIMO_SEM_CONVERSA = 60000; // 1 minuto sem conversa: fecha a janela.
 
     const textoPergunta = document.getElementById("textoPergunta");
     const respostaDiv = document.getElementById("resposta");
@@ -154,6 +155,11 @@
     let ouvindo = false;
     let vozSelecionada = null;
     let textoFinal = "";
+    let timerSilencio = null;
+    let timerSemConversa = null;
+    let enviando = false;
+    let jaEnviouAutomatico = false;
+    let jaTentouAutoStart = false;
 
     function normalizar(texto) {
       return String(texto || "")
@@ -161,6 +167,22 @@
         .replace(/[#_`]/g, "")
         .replace(/\s+/g, " ")
         .trim();
+    }
+
+    function tocarAtividade() {
+      if (timerSemConversa) clearTimeout(timerSemConversa);
+
+      timerSemConversa = setTimeout(function() {
+        if (enviando) return;
+
+        try { pararReconhecimento(); } catch (e) {}
+        statusDiv.innerText = "Sem conversa por 1 minuto. Fechando a janelinha...";
+
+        setTimeout(function() {
+          window.close();
+          statusDiv.innerText = "Pode fechar esta janela.";
+        }, 600);
+      }, TEMPO_MAXIMO_SEM_CONVERSA);
     }
 
     function carregarVozFeminina() {
@@ -184,6 +206,7 @@
       window.speechSynthesis.cancel();
 
       let limpo = normalizar(texto);
+      if (limpo.length > 600) limpo = limpo.substring(0, 600) + "...";
 
       const fala = new SpeechSynthesisUtterance(limpo);
       fala.lang = "pt-BR";
@@ -201,30 +224,53 @@
       window.speechSynthesis.onvoiceschanged = carregarVozFeminina;
     }
 
-    function iniciarReconhecimento() {
+    function limparTimerSilencio() {
+      if (timerSilencio) {
+        clearTimeout(timerSilencio);
+        timerSilencio = null;
+      }
+    }
+
+    function reiniciarTimerSilencio() {
+      limparTimerSilencio();
+
+      timerSilencio = setTimeout(function() {
+        const pergunta = normalizar(textoPergunta.value);
+
+        if (pergunta && !enviando && !jaEnviouAutomatico) {
+          jaEnviouAutomatico = true;
+          statusDiv.innerText = "Silêncio detectado. Enviando automaticamente...";
+          pararReconhecimento();
+          enviarPergunta();
+        }
+      }, TEMPO_SILENCIO_AUTO_ENVIO);
+    }
+
+    function criarReconhecimento() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
       if (!SpeechRecognition) {
         statusDiv.innerText = "Seu navegador não suporta reconhecimento de voz. Use Chrome ou Edge.";
-        return;
+        return null;
       }
 
-      window.speechSynthesis?.cancel();
-      textoFinal = textoPergunta.value.trim() ? textoPergunta.value.trim() + " " : "";
+      const rec = new SpeechRecognition();
+      rec.lang = "pt-BR";
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.maxAlternatives = 1;
 
-      recognition = new SpeechRecognition();
-      recognition.lang = "pt-BR";
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.maxAlternatives = 1;
-
-      recognition.onstart = function() {
+      rec.onstart = function() {
         ouvindo = true;
         btnFalar.classList.add("ouvindo");
         statusDiv.innerText = "Ouvindo... fale agora.";
+        respostaDiv.innerText = "Escutando sua pergunta...";
+        tocarAtividade();
       };
 
-      recognition.onresult = function(event) {
+      rec.onresult = function(event) {
+        tocarAtividade();
+
         let textoTemporario = "";
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -237,37 +283,92 @@
           }
         }
 
-        textoPergunta.value = normalizar(textoFinal + textoTemporario);
-      };
+        const textoAtual = normalizar(textoFinal + textoTemporario);
+        textoPergunta.value = textoAtual;
 
-      recognition.onerror = function(event) {
-        statusDiv.innerText = "Erro no microfone: " + event.error;
-        btnFalar.classList.remove("ouvindo");
-        ouvindo = false;
-      };
-
-      recognition.onend = function() {
-        btnFalar.classList.remove("ouvindo");
-        ouvindo = false;
-
-        if (textoPergunta.value.trim()) {
-          statusDiv.innerText = "Fala capturada. Clique em Enviar.";
-        } else {
-          statusDiv.innerText = "Não consegui transcrever. Tente falar mais perto do microfone.";
+        if (textoAtual) {
+          statusDiv.innerText = "Escutando... pare de falar por 2 segundos para enviar.";
+          respostaDiv.innerText = "Transcrição: " + textoAtual;
+          reiniciarTimerSilencio();
         }
       };
+
+      rec.onerror = function(event) {
+        limparTimerSilencio();
+        btnFalar.classList.remove("ouvindo");
+        ouvindo = false;
+
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+          statusDiv.innerText = "Microfone bloqueado. Permita o microfone no cadeado do navegador.";
+          respostaDiv.innerText = "Clique em permitir microfone e depois em Ouvir.";
+        } else if (event.error === "no-speech") {
+          statusDiv.innerText = "Não ouvi fala. Tentando escutar novamente...";
+          tentarReiniciarEscuta();
+        } else if (event.error === "aborted") {
+          // Normal quando a gravação é parada para enviar.
+        } else {
+          statusDiv.innerText = "Erro no microfone: " + event.error;
+        }
+      };
+
+      rec.onend = function() {
+        btnFalar.classList.remove("ouvindo");
+        ouvindo = false;
+
+        const pergunta = normalizar(textoPergunta.value);
+
+        if (!enviando && !jaEnviouAutomatico && pergunta) {
+          jaEnviouAutomatico = true;
+          statusDiv.innerText = "Fala capturada. Enviando...";
+          enviarPergunta();
+        } else if (!enviando && !pergunta) {
+          statusDiv.innerText = "Aguardando fala...";
+        }
+      };
+
+      return rec;
+    }
+
+    function iniciarReconhecimento() {
+      if (enviando || ouvindo) return;
+
+      tocarAtividade();
+      window.speechSynthesis?.cancel();
+      limparTimerSilencio();
+
+      textoFinal = "";
+      jaEnviouAutomatico = false;
+      textoPergunta.value = "";
+
+      recognition = criarReconhecimento();
+      if (!recognition) return;
 
       try {
         recognition.start();
       } catch (erro) {
-        statusDiv.innerText = "Não consegui iniciar o microfone. Tente novamente.";
+        statusDiv.innerText = "Não consegui iniciar o microfone. Clique em Ouvir.";
       }
     }
 
+    function tentarReiniciarEscuta() {
+      if (enviando) return;
+
+      setTimeout(function() {
+        if (!ouvindo && !normalizar(textoPergunta.value)) {
+          iniciarReconhecimento();
+        }
+      }, 800);
+    }
+
     function pararReconhecimento() {
+      limparTimerSilencio();
+
       if (recognition && ouvindo) {
-        recognition.stop();
+        try { recognition.stop(); } catch (e) {}
       }
+
+      ouvindo = false;
+      btnFalar.classList.remove("ouvindo");
     }
 
     function chamarIA(pergunta) {
@@ -282,10 +383,7 @@
 
         window[callbackName] = function(data) {
           delete window[callbackName];
-
-          if (script && script.parentNode) {
-            script.parentNode.removeChild(script);
-          }
+          if (script && script.parentNode) script.parentNode.removeChild(script);
 
           if (data && data.ok) {
             resolve(data.resposta);
@@ -305,11 +403,7 @@
 
         script.onerror = function() {
           delete window[callbackName];
-
-          if (script && script.parentNode) {
-            script.parentNode.removeChild(script);
-          }
-
+          if (script && script.parentNode) script.parentNode.removeChild(script);
           reject(new Error("Falha ao comunicar com o Apps Script. Confira o link /exec e a implantação."));
         };
 
@@ -320,17 +414,21 @@
     async function enviarPergunta() {
       const pergunta = normalizar(textoPergunta.value);
 
-      if (!pergunta) {
-        statusDiv.innerText = "Fale ou digite uma pergunta antes de enviar.";
+      if (!pergunta || enviando) {
+        if (!pergunta) statusDiv.innerText = "Não ouvi nenhuma pergunta.";
         return;
       }
 
+      tocarAtividade();
+      limparTimerSilencio();
       pararReconhecimento();
+      enviando = true;
 
       btnEnviar.disabled = true;
       btnFalar.disabled = true;
       btnParar.disabled = true;
       btnLimpar.disabled = true;
+      textoPergunta.disabled = true;
 
       statusDiv.innerText = "Enviando para o sistema...";
       respostaDiv.innerText = "Enviando e aguardando resposta...";
@@ -357,6 +455,9 @@
         }, 1800);
 
       } catch (erro) {
+        enviando = false;
+        jaEnviouAutomatico = false;
+
         respostaDiv.innerText = "Erro: " + erro.message;
         statusDiv.innerText = "Não consegui enviar para o sistema.";
 
@@ -364,24 +465,57 @@
         btnFalar.disabled = false;
         btnParar.disabled = false;
         btnLimpar.disabled = false;
+        textoPergunta.disabled = false;
+        tocarAtividade();
       }
     }
 
     btnFalar.addEventListener("click", iniciarReconhecimento);
-    btnParar.addEventListener("click", pararReconhecimento);
+    btnParar.addEventListener("click", function() {
+      pararReconhecimento();
+      const pergunta = normalizar(textoPergunta.value);
+      statusDiv.innerText = pergunta ? "Fala capturada. Enviando..." : "Voz parada.";
+      if (pergunta) enviarPergunta();
+    });
     btnEnviar.addEventListener("click", enviarPergunta);
 
     btnLimpar.addEventListener("click", function() {
+      tocarAtividade();
+      limparTimerSilencio();
       textoPergunta.value = "";
       textoFinal = "";
-      respostaDiv.innerText = "Resposta da assistente aparecerá aqui.";
+      jaEnviouAutomatico = false;
+      respostaDiv.innerText = "Aguardando sua fala...";
       statusDiv.innerText = "Pronto para ouvir.";
     });
 
+    textoPergunta.addEventListener("input", function() {
+      tocarAtividade();
+      if (normalizar(textoPergunta.value)) reiniciarTimerSilencio();
+    });
+
     textoPergunta.addEventListener("keydown", function(event) {
-      if (event.key === "Enter" && event.ctrlKey) {
-        enviarPergunta();
-      }
+      tocarAtividade();
+      if (event.key === "Enter" && event.ctrlKey) enviarPergunta();
+    });
+
+    window.addEventListener("load", function() {
+      tocarAtividade();
+
+      // Se a página foi aberta pelo botão do Via Connect, o navegador costuma permitir iniciar a escuta.
+      setTimeout(function() {
+        if (!jaTentouAutoStart) {
+          jaTentouAutoStart = true;
+          iniciarReconhecimento();
+        }
+      }, 650);
+    });
+
+    window.addEventListener("beforeunload", function() {
+      limparTimerSilencio();
+      if (timerSemConversa) clearTimeout(timerSemConversa);
+      try { pararReconhecimento(); } catch (e) {}
+      window.speechSynthesis?.cancel();
     });
   </script>
 
