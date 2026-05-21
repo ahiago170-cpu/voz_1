@@ -430,14 +430,14 @@
       btnLimpar.disabled = true;
       textoPergunta.disabled = true;
 
-      statusDiv.innerText = "Enviando para o sistema...";
-      respostaDiv.innerText = "Enviando e aguardando resposta...";
+      statusDiv.innerText = "Enviando para o Via Connect...";
+      respostaDiv.innerText = "Enviando...";
 
       try {
         const resposta = normalizar(await chamarIA(pergunta));
 
-        respostaDiv.innerText = resposta;
-        statusDiv.innerText = "Enviado com sucesso. Fechando a janelinha...";
+        respostaDiv.innerText = "Enviado com sucesso.";
+        statusDiv.innerText = "Enviado. O Via Connect vai falar a resposta.";
 
         if (window.opener) {
           window.opener.postMessage({
@@ -447,12 +447,11 @@
           }, "*");
         }
 
-        falarTexto(resposta);
-
+        // Não fala nesta janelinha. Quem fala a resposta é o Via Connect principal.
         setTimeout(function() {
           window.close();
           statusDiv.innerText = "Pergunta enviada. Pode fechar esta janela.";
-        }, 1800);
+        }, 500);
 
       } catch (erro) {
         enviando = false;
@@ -486,7 +485,7 @@
       textoFinal = "";
       jaEnviouAutomatico = false;
       respostaDiv.innerText = "Aguardando sua fala...";
-      statusDiv.innerText = "Pronto para ouvir.";
+      statusDiv.innerText = "Abrindo microfone automaticamente...";
     });
 
     textoPergunta.addEventListener("input", function() {
